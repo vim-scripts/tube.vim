@@ -4,8 +4,8 @@
 " Mantainer: Giacomo Comitti (https://github.com/gcmt)
 " Url: https://github.com/gcmt/tube.vim
 " License: MIT
-" Version: 0.1
-" Last Changed: 19 Jan 2013
+" Version: 0.2
+" Last Changed: 20 Jan 2013
 " ============================================================================
 "
 " TODO: commands history
@@ -37,7 +37,11 @@ endif
 
 if !exists("g:tube_percent_sign_expansion")
     let g:tube_percent_sign_expansion = 1
-endif
+endif  
+
+if !exists("g:tube_function_expansion")
+    let g:tube_function_expansion = 1
+endif     
 
 " }}}
 
@@ -47,6 +51,7 @@ python << END
 
 import vim
 import os
+import re
 from itertools import groupby
 
 
@@ -99,10 +104,15 @@ class TubeUtils:
             If two or more consecutive percent signs are found, then they are
             compacted into one percent sign.
         """
+        bufname = vim.current.buffer.name
+
         out = ''
         for char_group in [''.join(g) for k, g in groupby(raw_str)]:
             if char_group == '%':
-                out += vim.current.buffer.name
+                if bufname:
+                    out += bufname
+                else:
+                    out += ''
             elif char_group.startswith('%'):
                 out += '%'
             else:
@@ -110,7 +120,35 @@ class TubeUtils:
 
         return out
     # }}}
-        
+
+    @staticmethod
+    def expand_functions(raw_str): # {{{
+        """Inject the return value of a function in the string where the
+           function is specified as "#{function_name}" in the string.
+
+           The function is a vim function and can be placed into the
+           .vimrc file.
+        """
+        s = raw_str
+
+        match = True
+        while match:
+
+            match = re.search('#{\w*}', s)
+            if match:
+                fun_name = match.group()[2:-1]
+                if fun_name:
+                    if '1' == vim.eval("exists('*{0}')".format(fun_name)):
+                        r = vim.eval("call(function('{0}'), [])".format(fun_name))
+                    else: # the function does not exist
+                        return
+                else:
+                    r = ""
+
+                s = s[:match.start()] + r + s[match.end():]
+
+        return s   
+    # }}}
 
 class Tube:
 
@@ -122,36 +160,38 @@ class Tube:
         self.last_command = ''
     # }}}
 
-    def run_command(self, command, clear=False): # {{{
-        """Execute the given command in the terminal window."""
-        command = command.strip()
-
-        if TubeUtils.setting('percent_sign_expansion', fmt=bool):
-            command = TubeUtils.expand_percent_sign_with_curr_buffer(command)
-
-        if not command: # no argument is passed to the 'Tube' command
-            clear_str = 'clear;'
-        else:
-            if (clear or TubeUtils.setting('always_clear_screen', fmt=bool)):
-                clear_str = 'clear;'
-            else:
-                clear_str = ''             
-
+    def run(self, command, clear=False): # {{{
+        """Send the command to the terminal emulator of choice"""
         term = TubeUtils.setting('terminal').lower()
         if term == 'iterm':
             base = self.BASE_CMD_SCRIPTS + 'execute_iterm.scpt' 
         else:
             base = self.BASE_CMD_SCRIPTS + 'execute_terminal.scpt' 
 
-        os.popen("{0} '{1}'".format(base, clear_str + command))
+        clr = 'clear;' if clear else ''
+        os.popen("{0} '{1}'".format(base, clr + command.strip()))
+    # }}}
+
+    def run_command(self, command, clear=False): # {{{
+        """Prepare the command and manage the "send command" behavior."""
+
+        if command and TubeUtils.setting('percent_sign_expansion', fmt=bool):
+            command = TubeUtils.expand_percent_sign_with_curr_buffer(command)
+
+        if command and TubeUtils.setting('function_expansion', fmt=bool):
+            command = TubeUtils.expand_functions(command)
+            if not command:
+                TubeUtils.feedback('unknown function')
+                return
+
+        if (not command or clear 
+            or TubeUtils.setting('always_clear_screen', fmt=bool)):
+            self.run(command, clear=True)
+        else:
+            self.run(command)
 
         if not TubeUtils.setting('run_command_background', fmt=bool):
-            if term == 'terminal':
-                cmd = 'tell application "Terminal" to activate'
-            else:
-                cmd = 'tell application "iTerm" to activate'
-            
-            os.popen("{0} '{1}'".format(self.BASE_CMD, cmd))
+            self.focus_terminal()
 
         self.last_command = command
     # }}}
@@ -196,6 +236,17 @@ class Tube:
             cmd = 'tell application "Terminal" to quit'
         else:
             cmd = 'tell application "iTerm" to quit'
+        
+        os.popen("{0} '{1}'".format(self.BASE_CMD, cmd))
+    # }}}
+
+    def focus_terminal(self): # {{{
+        """Give focus to the terminal window."""
+        term = TubeUtils.setting('terminal').lower()
+        if term == 'terminal':
+            cmd = 'tell application "Terminal" to activate'
+        else:
+            cmd = 'tell application "iTerm" to activate'
         
         os.popen("{0} '{1}'".format(self.BASE_CMD, cmd))
     # }}}
@@ -301,3 +352,4 @@ command! TubeClose python tube.close()
 command! TubeToggleClearScreen python tube.toggle_setting('always_clear_screen')
 command! TubeToggleRunBackground python tube.toggle_setting('run_command_background')
 command! TubeToggleExpandPercent python tube.toggle_setting('percent_sign_expansion')
+command! TubeToggleExpandFunction python tube.toggle_setting('function_expansion')
