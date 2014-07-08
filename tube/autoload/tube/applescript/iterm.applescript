@@ -1,12 +1,11 @@
--- execute_iterm.scpt
--- last change: 19 Jan 2013
+-- iterm.applescript
 ---
--- this script require an argument that represent the command to execute
+-- this script requires an argument that represent the command to execute
 
 on run argv
 
     set command to (item 1 of argv)
-    
+
     tell application "iTerm"
 
         try
@@ -19,7 +18,6 @@ on run argv
             end tell
         end try
 
-        -- execute the command
         tell mysession
             write text command
         end tell

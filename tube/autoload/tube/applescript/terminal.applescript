@@ -1,7 +1,6 @@
--- execute_terminal.scpt
--- last change: 19 Jan 2013
+-- terminal.applescript
 ---
--- this script require an argument that represent the command to execute
+-- this script requires an argument that represent the command to execute
 
 on run argv
 
@@ -9,10 +8,7 @@ on run argv
 
     tell application "Terminal"
         activate
-
-        -- execute the command
         do script command in window 1
-
     end tell
 
     tell application "MacVim" to activate
